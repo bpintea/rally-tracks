@@ -1,4 +1,5 @@
 {% import "rally.helpers" as rally with context %}
+{% import "_data.j2" as d with context %}
 
 {# ---------------------------------------------------------------------------
    ES|QL Datasources track.
@@ -28,6 +29,22 @@
                           esbench `client.options.default.timeout`) must be
                           >= this value or the connection is closed first.
    --------------------------------------------------------------------------- #}
+
+{# Consume track parameters so Rally's strict-check does not reject them.
+   mirror_region, request_timeout and anchor_source_id are consumed in
+   _data.j2; query_clients, query_warmup and query_iterations in
+   challenges/default.json.  Any extra params injected by the benchmark
+   runner (e.g. ingest_percentage from shared IT defaults) are sunk here. #}
+{% set _sink = {
+  "mirror_region":     mirror_region     | default("europe-west1"),
+  "request_timeout":   request_timeout   | default(1800),
+  "anchor_source_id":  anchor_source_id  | default("H2"),
+  "query_clients":     query_clients     | default(1),
+  "query_iterations":  query_iterations  | default(1),
+  "query_warmup":      query_warmup      | default(1),
+  "cluster_health":    cluster_health    | default("green"),
+  "ingest_percentage": ingest_percentage | default(100)
+} %}
 
 {
   "version": 2,
