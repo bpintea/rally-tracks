@@ -15,16 +15,21 @@ Plus one setup bulk op that loads the `nyc_payment_types` lookup index (5 docs).
 
 ## Source catalogue
 
-| id | dataset     | format  | codec  | backend | auth       | URI |
-| -- | ----------- | ------- | ------ | ------- | ---------- | --- |
-| H1 | hits        | Parquet | ZSTD   | HTTP    | anonymous  | `https://clickhouse-public-datasets.s3.amazonaws.com/hits_compatible/hits.parquet` |
-| H2 | hits        | Parquet | ZSTD   | S3      | anonymous  | `s3://clickhouse-public-datasets/hits_compatible/hits.parquet` (canonical anchor) |
-| H3 | hits        | Parquet | ZSTD   | S3      | anonymous  | `s3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_*.parquet` |
-| H4 | hits        | NDJSON  | gzip   | HTTP    | anonymous  | `https://datasets.clickhouse.com/hits_compatible/hits.json.gz` |
-| H5 | hits        | CSV     | gzip   | HTTP    | anonymous  | `https://datasets.clickhouse.com/hits_compatible/hits.csv.gz` |
-| N1 | nyc_taxis   | NDJSON  | bzip2  | S3      | IAM        | `s3://es-perf-mirror-<region>/rally-tracks/nyc_taxis/documents.json.bz2` |
-| N2 | nyc_taxis   | NDJSON  | bzip2  | GCS     | IAM        | `gs://es-perf-mirror-<region>/rally-tracks/nyc_taxis/documents.json.bz2` |
-| N3 | nyc_taxis   | Parquet | Snappy | Azure   | anonymous  | `wasbs://nyctlc@azureopendatastorage.blob.core.windows.net/yellow/puYear=*/puMonth=*/part-*.parquet` |
+| id | dataset     | format  | codec  | backend | auth       | URI | WITH clause |
+| -- | ----------- | ------- | ------ | ------- | ---------- | --- | ----------- |
+| H1 | hits        | Parquet | ZSTD   | HTTP    | anonymous  | `https://clickhouse-public-datasets.s3.amazonaws.com/hits_compatible/hits.parquet` | (none) |
+| H2 | hits        | Parquet | ZSTD   | S3      | anonymous  | `s3://clickhouse-public-datasets/hits_compatible/hits.parquet` (canonical anchor) | `WITH { "auth": "none" }` |
+| H3 | hits        | Parquet | ZSTD   | S3      | anonymous  | `s3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_*.parquet` | `WITH { "auth": "none" }` |
+| H4 | hits        | NDJSON  | gzip   | HTTP    | anonymous  | `https://datasets.clickhouse.com/hits_compatible/hits.json.gz` | (none) |
+| H5 | hits        | CSV     | gzip   | HTTP    | anonymous  | `https://datasets.clickhouse.com/hits_compatible/hits.csv.gz` | (none) |
+| N1 | nyc_taxis   | NDJSON  | bzip2  | S3      | IAM        | `s3://es-perf-mirror-<region>/rally-tracks/nyc_taxis/documents.json.bz2` | (none — uses cluster IAM instance profile) |
+| N2 | nyc_taxis   | NDJSON  | bzip2  | GCS     | IAM        | `gs://es-perf-mirror-<region>/rally-tracks/nyc_taxis/documents.json.bz2` | (none — uses cluster ADC) |
+| N3 | nyc_taxis   | Parquet | Snappy | Azure   | anonymous  | `wasbs://nyctlc@azureopendatastorage.blob.core.windows.net/yellow/puYear=*/puMonth=*/part-*.parquet` | `WITH { "auth": "none" }` |
+
+The WITH clause is required for **H2, H3, N3**: without `auth=none`, `esql-datasource-{s3,azure}` fall back to the cluster's default credential chain — which on the nightly cluster is wired to the IAM/Azure keystore for the internal mirror buckets and would fail against the public ClickBench / Azure Open Datasets buckets. The HTTP plugin doesn't take credentials, and N1/N2 deliberately use the cluster's default S3 IAM / GCS Application Default Credentials (no WITH means "use what the cluster has"). To override N1/N2 with explicit static credentials (e.g. for a smoke run from outside the provisioned environment), set the source's `with` field in [`_data.j2`](_data.j2) to e.g. `WITH { "access_key": "...", "secret_key": "..." }` (S3) or `WITH { "credentials": "<service-account-json>" }` (GCS).
+
+> [!NOTE]
+> Against current `9.5.0-SNAPSHOT` builds, N3 (Azure-anon) fails with HTTP 401 from Azure even though the `nyctlc` container is anonymously readable via plain HTTPS — `esql-datasource-azure`'s anonymous code path builds a `BlobServiceClient` without an explicit anonymous credential, and the Azure SDK Java client doesn't truly skip auth in that mode. The track configuration above matches the plugin's documented contract; tracking the plugin behaviour separately.
 
 Set `mirror_region` (track param) to match the cluster's region (default: `europe-west1`). N1/N2 rely on the EC2/GCE instance-profile/service-account credentials provisioned for the `es-perf-mirror-<region>` bucket.
 

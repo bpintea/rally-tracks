@@ -22,49 +22,80 @@
    the worst observed case so a slow run doesn't cause a transport timeout. #}
 {% set request_timeout = request_timeout | default(1800) %}
 
-{# --- Source variants (axis A, 8 variants). --- #}
+{# --- Source variants (axis A, 8 variants).
+
+   `with` is the EXTERNAL command's WITH-clause map (Jinja-string, inserted
+   verbatim between the URI and the leading pipe). Empty string means no WITH.
+   Per `esql-datasource-{s3,gcs,azure}` plugins:
+     - HTTP backend never needs a WITH clause for public URIs.
+     - S3-anon / Azure-anon need `WITH { "auth": "none" }` to opt out of
+       the cluster's default credential chain (which on the nightly cluster
+       would otherwise pick up the IAM keystore creds intended for the
+       internal mirror buckets and fail against the public buckets).
+     - S3-IAM / GCS-IAM use the cluster's default IAM instance profile /
+       Application Default Credentials — no WITH needed. Override here if
+       explicit static credentials are ever required (e.g. during a smoke
+       run from outside the provisioned environment).
+   --- #}
 {% set sources = [
   {
     "id": "H1",
     "uri": "https://clickhouse-public-datasets.s3.amazonaws.com/hits_compatible/hits.parquet",
-    "format": "parquet", "codec": "zstd", "backend": "http", "auth": "anonymous", "dataset": "hits"
+    "format": "parquet", "codec": "zstd", "backend": "http", "auth": "anonymous", "dataset": "hits",
+    "with": ""
   },
   {
     "id": "H2",
     "uri": "s3://clickhouse-public-datasets/hits_compatible/hits.parquet",
-    "format": "parquet", "codec": "zstd", "backend": "s3", "auth": "anonymous", "dataset": "hits"
+    "format": "parquet", "codec": "zstd", "backend": "s3", "auth": "anonymous", "dataset": "hits",
+    "with": 'WITH { "auth": "none" }'
   },
   {
     "id": "H3",
     "uri": "s3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_*.parquet",
-    "format": "parquet", "codec": "zstd", "backend": "s3", "auth": "anonymous", "dataset": "hits"
+    "format": "parquet", "codec": "zstd", "backend": "s3", "auth": "anonymous", "dataset": "hits",
+    "with": 'WITH { "auth": "none" }'
   },
   {
     "id": "H4",
     "uri": "https://datasets.clickhouse.com/hits_compatible/hits.json.gz",
-    "format": "ndjson", "codec": "gzip", "backend": "http", "auth": "anonymous", "dataset": "hits"
+    "format": "ndjson", "codec": "gzip", "backend": "http", "auth": "anonymous", "dataset": "hits",
+    "with": ""
   },
   {
     "id": "H5",
     "uri": "https://datasets.clickhouse.com/hits_compatible/hits.csv.gz",
-    "format": "csv", "codec": "gzip", "backend": "http", "auth": "anonymous", "dataset": "hits"
+    "format": "csv", "codec": "gzip", "backend": "http", "auth": "anonymous", "dataset": "hits",
+    "with": ""
   },
   {
     "id": "N1",
     "uri": "s3://es-perf-mirror-" ~ mirror_region ~ "/rally-tracks/nyc_taxis/documents.json.bz2",
-    "format": "ndjson", "codec": "bzip2", "backend": "s3", "auth": "iam", "dataset": "nyc_taxis"
+    "format": "ndjson", "codec": "bzip2", "backend": "s3", "auth": "iam", "dataset": "nyc_taxis",
+    "with": ""
   },
   {
     "id": "N2",
     "uri": "gs://es-perf-mirror-" ~ mirror_region ~ "/rally-tracks/nyc_taxis/documents.json.bz2",
-    "format": "ndjson", "codec": "bzip2", "backend": "gcs", "auth": "iam", "dataset": "nyc_taxis"
-  },
+    "format": "ndjson", "codec": "bzip2", "backend": "gcs", "auth": "iam", "dataset": "nyc_taxis",
+    "with": ""
+  }
+] %}
+
+{# --- N3 disabled: `esql-datasource-azure`'s anonymous code path returns 401
+       from azureopendatastorage even though Microsoft documents the dataset
+       as fully anonymous (SAS = empty in their own samples) and direct
+       HTTPS reads succeed. Re-enable once the plugin's anonymous mode is
+       fixed — append the entry below back into the `sources` list above
+       (with a leading comma after the N2 entry):
+
   {
     "id": "N3",
     "uri": "wasbs://nyctlc@azureopendatastorage.blob.core.windows.net/yellow/puYear=*/puMonth=*/part-*.parquet",
-    "format": "parquet", "codec": "snappy", "backend": "azure", "auth": "anonymous", "dataset": "nyc_taxis"
+    "format": "parquet", "codec": "snappy", "backend": "azure", "auth": "anonymous", "dataset": "nyc_taxis",
+    "with": 'WITH { "auth": "none" }'
   }
-] %}
+--- #}
 
 {# --- Benchmark queries (axis B, set 1 — 31 variants).
        Real-world analytics queries against the `hits` web-log dataset:
