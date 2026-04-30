@@ -1,0 +1,106 @@
+{% import "_data.j2" as d with context %}
+{# -------------------------------------------------------------------
+   Single `esql_datasources` challenge. Schedules:
+     - setup:   delete-index / create-index / cluster-health / bulk-index-payment-types
+     - queries: all EXTERNAL ops generated from sources x queries in
+                operations/default.json (~93 ops).
+
+   See ../_data.j2 for the sources / query catalogues / subset ids.
+   ------------------------------------------------------------------- #}
+
+{%- set anchor = d.sources | selectattr("id", "equalto", d.anchor_source_id) | first %}
+{%- set query_clients = query_clients | default(1) %}
+{%- set query_iterations = query_iterations | default(1) %}
+{%- set query_warmup = query_warmup | default(1) %}
+
+    {
+      "name": "esql_datasources",
+      "description": "EXTERNAL command x (format x codec x backend) source matrix",
+      "default": true,
+      "schedule": [
+        {
+          "operation": "delete-index",
+          "tags": ["setup"]
+        },
+        {
+          "operation": {
+            "operation-type": "create-index",
+            "settings": {
+              "index.number_of_shards": 1,
+              "index.number_of_replicas": 0
+            }
+          },
+          "tags": ["setup"]
+        },
+        {
+          "name": "check-cluster-health",
+          "operation": {
+            "operation-type": "cluster-health",
+            "index": "nyc_payment_types",
+            "request-params": {
+              "wait_for_status": "{{ cluster_health | default('green') }}",
+              "wait_for_no_relocating_shards": "true"
+            },
+            "retry-until-success": true
+          },
+          "tags": ["setup"]
+        },
+        {
+          "operation": "bulk-index-payment-types",
+          "clients": 1,
+          "tags": ["setup"]
+        }
+
+        {# --- Benchmark anchor: 31 queries on H2 --- #}
+{%- for q in d.benchmark_queries %}
+        ,
+        {
+          "operation": "{{ anchor.id }}__{{ q.id }}",
+          "tags": ["query", "benchmark-full", "source:{{ anchor.id }}"],
+          "clients": {{ query_clients }},
+          "warmup-iterations": {{ query_warmup }},
+          "iterations": {{ query_iterations }}
+        }
+{%- endfor %}
+
+        {# --- Cross-source subset: 8 queries x 7 non-canonical sources --- #}
+{%- for s in d.sources if s.id != d.anchor_source_id %}
+{%- for q in d.benchmark_queries if q.id in d.subset_ids %}
+        ,
+        {
+          "operation": "{{ s.id }}__{{ q.id }}",
+          "tags": ["query", "cross-source-subset", "source:{{ s.id }}"],
+          "clients": {{ query_clients }},
+          "warmup-iterations": {{ query_warmup }},
+          "iterations": {{ query_iterations }}
+        }
+{%- endfor %}
+{%- endfor %}
+
+        {# --- External-basic gap-fillers on H2 --- #}
+{%- for q in d.gapfiller_queries %}
+        ,
+        {
+          "operation": "{{ anchor.id }}__{{ q.id }}",
+          "tags": ["query", "external-basic-gapfiller", "source:{{ anchor.id }}"],
+          "clients": {{ query_clients }},
+          "warmup-iterations": {{ query_warmup }},
+          "iterations": {{ query_iterations }}
+        }
+{%- endfor %}
+
+        {# --- LOOKUP JOIN on N1, N2 --- #}
+{%- for s in d.sources if s.id in d.lookup_join_source_ids %}
+{%- for q in d.lookup_join_queries %}
+        ,
+        {
+          "operation": "{{ s.id }}__{{ q.id }}",
+          "tags": ["query", "lookup-join", "source:{{ s.id }}"],
+          "clients": {{ query_clients }},
+          "warmup-iterations": {{ query_warmup }},
+          "iterations": {{ query_iterations }}
+        }
+{%- endfor %}
+{%- endfor %}
+      ]
+    }

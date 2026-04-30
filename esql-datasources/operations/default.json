@@ -1,0 +1,106 @@
+{% import "_data.j2" as d with context %}
+{# -------------------------------------------------------------------
+   Generates the EXTERNAL operation matrix for the esql-datasources track.
+   Source variants and query catalogues come from `_data.j2`.
+
+   Layout: ~93 EXTERNAL ops per challenge run, plus 1 setup bulk op
+   that loads the `nyc_payment_types` lookup index (5 docs).
+   ------------------------------------------------------------------- #}
+
+{%- set anchor = d.sources | selectattr("id", "equalto", d.anchor_source_id) | first %}
+
+    {
+      "name": "bulk-index-payment-types",
+      "operation-type": "bulk",
+      "indices": ["nyc_payment_types"],
+      "bulk-size": 5,
+      "ingest-percentage": 100
+    }
+
+{# ----- Anchor: 31 benchmark queries on the canonical H2 source. ----- #}
+{%- for q in d.benchmark_queries %}
+,
+    {
+      "name": "{{ anchor.id }}__{{ q.id }}",
+      "operation-type": "esql",
+      "request-timeout": {{ d.request_timeout }},
+      "query":{{ ('EXTERNAL "' ~ anchor.uri ~ '" | ' ~ q.suffix) | tojson }},
+      "meta": {
+        "source-id": "{{ anchor.id }}",
+        "query-id": "{{ q.id }}",
+        "query-group": "benchmark-full",
+        "format": "{{ anchor.format }}",
+        "codec": "{{ anchor.codec }}",
+        "backend": "{{ anchor.backend }}",
+        "auth": "{{ anchor.auth }}",
+        "dataset": "{{ anchor.dataset }}"
+      }
+    }
+{%- endfor %}
+
+{# ----- Cross-source subset: 8 queries x 7 non-canonical sources. ----- #}
+{%- for s in d.sources if s.id != d.anchor_source_id %}
+{%- for q in d.benchmark_queries if q.id in d.subset_ids %}
+,
+    {
+      "name": "{{ s.id }}__{{ q.id }}",
+      "operation-type": "esql",
+      "request-timeout": {{ d.request_timeout }},
+      "query":{{ ('EXTERNAL "' ~ s.uri ~ '" | ' ~ q.suffix) | tojson }},
+      "meta": {
+        "source-id": "{{ s.id }}",
+        "query-id": "{{ q.id }}",
+        "query-group": "cross-source-subset",
+        "format": "{{ s.format }}",
+        "codec": "{{ s.codec }}",
+        "backend": "{{ s.backend }}",
+        "auth": "{{ s.auth }}",
+        "dataset": "{{ s.dataset }}"
+      }
+    }
+{%- endfor %}
+{%- endfor %}
+
+{# ----- Gap-fillers: 4 external-basic queries on the canonical H2 source. ----- #}
+{%- for q in d.gapfiller_queries %}
+,
+    {
+      "name": "{{ anchor.id }}__{{ q.id }}",
+      "operation-type": "esql",
+      "request-timeout": {{ d.request_timeout }},
+      "query":{{ ('EXTERNAL "' ~ anchor.uri ~ '" | ' ~ q.suffix) | tojson }},
+      "meta": {
+        "source-id": "{{ anchor.id }}",
+        "query-id": "{{ q.id }}",
+        "query-group": "external-basic-gapfiller",
+        "format": "{{ anchor.format }}",
+        "codec": "{{ anchor.codec }}",
+        "backend": "{{ anchor.backend }}",
+        "auth": "{{ anchor.auth }}",
+        "dataset": "{{ anchor.dataset }}"
+      }
+    }
+{%- endfor %}
+
+{# ----- LOOKUP JOIN: 1 query x {N1, N2} NDJSON nyc_taxis sources. ----- #}
+{%- for s in d.sources if s.id in d.lookup_join_source_ids %}
+{%- for q in d.lookup_join_queries %}
+,
+    {
+      "name": "{{ s.id }}__{{ q.id }}",
+      "operation-type": "esql",
+      "request-timeout": {{ d.request_timeout }},
+      "query":{{ ('EXTERNAL "' ~ s.uri ~ '" | ' ~ q.suffix) | tojson }},
+      "meta": {
+        "source-id": "{{ s.id }}",
+        "query-id": "{{ q.id }}",
+        "query-group": "lookup-join",
+        "format": "{{ s.format }}",
+        "codec": "{{ s.codec }}",
+        "backend": "{{ s.backend }}",
+        "auth": "{{ s.auth }}",
+        "dataset": "{{ s.dataset }}"
+      }
+    }
+{%- endfor %}
+{%- endfor %}

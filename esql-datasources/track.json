@@ -1,0 +1,67 @@
+{% import "rally.helpers" as rally with context %}
+
+{# ---------------------------------------------------------------------------
+   ES|QL Datasources track.
+
+   Benchmarks the ESQL EXTERNAL command across a matrix of:
+     - file formats: Parquet, NDJSON, CSV
+     - codecs:       ZSTD, gzip, bzip2, Snappy
+     - backends:     HTTP, S3 (anon + IAM), GCS (IAM), Azure (anon)
+
+   Source variants and query catalogues are defined in `_data.j2`, imported
+   by both operations/*.json and challenges/*.json. See README.md for the
+   source catalogue and the ~93 EXTERNAL op layout.
+
+   Track parameters (all optional):
+     mirror_region        Region suffix for the rally-tracks mirror buckets
+                          (es-perf-mirror-<region>). Default: europe-west1.
+     anchor_source_id     Source id that runs the full 31-query benchmark
+                          suite. Default: H2 (Parquet/ZSTD/S3-anon/single).
+     query_clients        Rally clients per query op. Default: 1.
+     query_iterations     Rally iterations per query op. Default: 1.
+     query_warmup         Rally warmup iterations per query op. Default: 1.
+     request_timeout      Per-op client-side timeout (seconds) for EXTERNAL
+                          queries. Default: 1800. EXTERNAL scans the remote
+                          source on every call, so even a `COUNT(*)` over a
+                          ~14GB Parquet takes minutes. The cluster-side ES
+                          client connect timeout (Rally `--client-options`,
+                          esbench `client.options.default.timeout`) must be
+                          >= this value or the connection is closed first.
+   --------------------------------------------------------------------------- #}
+
+{
+  "version": 2,
+  "description": "EXTERNAL command across Parquet/NDJSON/CSV x ZSTD/gzip/bzip2/Snappy x HTTP/S3/GCS/Azure sources",
+
+  "indices": [
+    {
+      "name": "nyc_payment_types",
+      "body": "index-payment-types.json"
+    }
+  ],
+
+  "corpora": [
+    {
+      "name": "nyc_payment_types",
+      "base-url": "https://rally-tracks.elastic.co/nyc_taxis",
+      "documents": [
+        {
+          "target-index": "nyc_payment_types",
+          "source-file": "nyc_payment_types.json.bz2",
+          "#COMMENT": "Manually created lookup table for payment_type field (5 docs).",
+          "document-count": 5,
+          "compressed-bytes": 139,
+          "uncompressed-bytes": 245
+        }
+      ]
+    }
+  ],
+
+  "operations": [
+    {{ rally.collect(parts="operations/*.json") }}
+  ],
+
+  "challenges": [
+    {{ rally.collect(parts="challenges/*.json") }}
+  ]
+}

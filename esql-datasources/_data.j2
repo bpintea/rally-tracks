@@ -1,0 +1,171 @@
+{# ---------------------------------------------------------------------------
+   Shared data for the esql-datasources track. Import with:
+       {% import "_data.j2" as d with context %}
+   then access via `d.sources`, `d.benchmark_queries`, `d.subset_ids`,
+   `d.gapfiller_queries`, `d.lookup_join_queries`, `d.anchor_source_id`,
+   `d.lookup_join_source_ids`.
+
+   Keeping the data here (instead of track.json) lets both operations/*.json
+   and challenges/*.json see it: Rally's `rally.collect` macro calls
+   `{% include part %}` in an isolated scope that does NOT inherit
+   `{% set %}` variables from track.json, but `{% import ... as X with context %}`
+   makes the variables reachable as attributes of the imported module.
+   --------------------------------------------------------------------------- #}
+
+{% set mirror_region = mirror_region | default("europe-west1") %}
+{% set anchor_source_id = anchor_source_id | default("H2") %}
+{% set lookup_join_source_ids = ["N1", "N2"] %}
+
+{# Per-op client-side timeout for EXTERNAL queries. A single COUNT(*) over the
+   14GB hits.parquet measured ~5 minutes on a local 9.5.0-SNAPSHOT build; the
+   90-SUM aggregation and full-scan group-bys are heavier. Default well above
+   the worst observed case so a slow run doesn't cause a transport timeout. #}
+{% set request_timeout = request_timeout | default(1800) %}
+
+{# --- Source variants (axis A, 8 variants). --- #}
+{% set sources = [
+  {
+    "id": "H1",
+    "uri": "https://clickhouse-public-datasets.s3.amazonaws.com/hits_compatible/hits.parquet",
+    "format": "parquet", "codec": "zstd", "backend": "http", "auth": "anonymous", "dataset": "hits"
+  },
+  {
+    "id": "H2",
+    "uri": "s3://clickhouse-public-datasets/hits_compatible/hits.parquet",
+    "format": "parquet", "codec": "zstd", "backend": "s3", "auth": "anonymous", "dataset": "hits"
+  },
+  {
+    "id": "H3",
+    "uri": "s3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_*.parquet",
+    "format": "parquet", "codec": "zstd", "backend": "s3", "auth": "anonymous", "dataset": "hits"
+  },
+  {
+    "id": "H4",
+    "uri": "https://datasets.clickhouse.com/hits_compatible/hits.json.gz",
+    "format": "ndjson", "codec": "gzip", "backend": "http", "auth": "anonymous", "dataset": "hits"
+  },
+  {
+    "id": "H5",
+    "uri": "https://datasets.clickhouse.com/hits_compatible/hits.csv.gz",
+    "format": "csv", "codec": "gzip", "backend": "http", "auth": "anonymous", "dataset": "hits"
+  },
+  {
+    "id": "N1",
+    "uri": "s3://es-perf-mirror-" ~ mirror_region ~ "/rally-tracks/nyc_taxis/documents.json.bz2",
+    "format": "ndjson", "codec": "bzip2", "backend": "s3", "auth": "iam", "dataset": "nyc_taxis"
+  },
+  {
+    "id": "N2",
+    "uri": "gs://es-perf-mirror-" ~ mirror_region ~ "/rally-tracks/nyc_taxis/documents.json.bz2",
+    "format": "ndjson", "codec": "bzip2", "backend": "gcs", "auth": "iam", "dataset": "nyc_taxis"
+  },
+  {
+    "id": "N3",
+    "uri": "wasbs://nyctlc@azureopendatastorage.blob.core.windows.net/yellow/puYear=*/puMonth=*/part-*.parquet",
+    "format": "parquet", "codec": "snappy", "backend": "azure", "auth": "anonymous", "dataset": "nyc_taxis"
+  }
+] %}
+
+{# --- Benchmark queries (axis B, set 1 — 31 variants).
+       Real-world analytics queries against the `hits` web-log dataset:
+       counts, point lookups, distinct cardinality, group-by (low and high
+       cardinality), top-N, filter+aggregate combinations, time bucketing,
+       wide arithmetic aggregations.
+       Each entry is the ES|QL pipeline text after the leading `EXTERNAL "<uri>" | `. --- #}
+{% set benchmark_queries = [
+  { "id": "count_hits",
+    "suffix": 'STATS count = COUNT(*)' },
+  { "id": "count_advengineid_nonzero",
+    "suffix": 'WHERE AdvEngineID != 0 | STATS count = COUNT(*)' },
+  { "id": "filter_userid_435090932899640449",
+    "suffix": 'WHERE UserID == 435090932899640449 | KEEP UserID' },
+  { "id": "stats_resolution_width_sums",
+    "suffix": 'STATS sum_0 = SUM(ResolutionWidth), sum_1 = SUM(ResolutionWidth + 1), sum_2 = SUM(ResolutionWidth + 2), sum_3 = SUM(ResolutionWidth + 3), sum_4 = SUM(ResolutionWidth + 4), sum_5 = SUM(ResolutionWidth + 5), sum_6 = SUM(ResolutionWidth + 6), sum_7 = SUM(ResolutionWidth + 7), sum_8 = SUM(ResolutionWidth + 8), sum_9 = SUM(ResolutionWidth + 9), sum_10 = SUM(ResolutionWidth + 10), sum_11 = SUM(ResolutionWidth + 11), sum_12 = SUM(ResolutionWidth + 12), sum_13 = SUM(ResolutionWidth + 13), sum_14 = SUM(ResolutionWidth + 14), sum_15 = SUM(ResolutionWidth + 15), sum_16 = SUM(ResolutionWidth + 16), sum_17 = SUM(ResolutionWidth + 17), sum_18 = SUM(ResolutionWidth + 18), sum_19 = SUM(ResolutionWidth + 19), sum_20 = SUM(ResolutionWidth + 20), sum_21 = SUM(ResolutionWidth + 21), sum_22 = SUM(ResolutionWidth + 22), sum_23 = SUM(ResolutionWidth + 23), sum_24 = SUM(ResolutionWidth + 24), sum_25 = SUM(ResolutionWidth + 25), sum_26 = SUM(ResolutionWidth + 26), sum_27 = SUM(ResolutionWidth + 27), sum_28 = SUM(ResolutionWidth + 28), sum_29 = SUM(ResolutionWidth + 29), sum_30 = SUM(ResolutionWidth + 30), sum_31 = SUM(ResolutionWidth + 31), sum_32 = SUM(ResolutionWidth + 32), sum_33 = SUM(ResolutionWidth + 33), sum_34 = SUM(ResolutionWidth + 34), sum_35 = SUM(ResolutionWidth + 35), sum_36 = SUM(ResolutionWidth + 36), sum_37 = SUM(ResolutionWidth + 37), sum_38 = SUM(ResolutionWidth + 38), sum_39 = SUM(ResolutionWidth + 39), sum_40 = SUM(ResolutionWidth + 40), sum_41 = SUM(ResolutionWidth + 41), sum_42 = SUM(ResolutionWidth + 42), sum_43 = SUM(ResolutionWidth + 43), sum_44 = SUM(ResolutionWidth + 44), sum_45 = SUM(ResolutionWidth + 45), sum_46 = SUM(ResolutionWidth + 46), sum_47 = SUM(ResolutionWidth + 47), sum_48 = SUM(ResolutionWidth + 48), sum_49 = SUM(ResolutionWidth + 49), sum_50 = SUM(ResolutionWidth + 50), sum_51 = SUM(ResolutionWidth + 51), sum_52 = SUM(ResolutionWidth + 52), sum_53 = SUM(ResolutionWidth + 53), sum_54 = SUM(ResolutionWidth + 54), sum_55 = SUM(ResolutionWidth + 55), sum_56 = SUM(ResolutionWidth + 56), sum_57 = SUM(ResolutionWidth + 57), sum_58 = SUM(ResolutionWidth + 58), sum_59 = SUM(ResolutionWidth + 59), sum_60 = SUM(ResolutionWidth + 60), sum_61 = SUM(ResolutionWidth + 61), sum_62 = SUM(ResolutionWidth + 62), sum_63 = SUM(ResolutionWidth + 63), sum_64 = SUM(ResolutionWidth + 64), sum_65 = SUM(ResolutionWidth + 65), sum_66 = SUM(ResolutionWidth + 66), sum_67 = SUM(ResolutionWidth + 67), sum_68 = SUM(ResolutionWidth + 68), sum_69 = SUM(ResolutionWidth + 69), sum_70 = SUM(ResolutionWidth + 70), sum_71 = SUM(ResolutionWidth + 71), sum_72 = SUM(ResolutionWidth + 72), sum_73 = SUM(ResolutionWidth + 73), sum_74 = SUM(ResolutionWidth + 74), sum_75 = SUM(ResolutionWidth + 75), sum_76 = SUM(ResolutionWidth + 76), sum_77 = SUM(ResolutionWidth + 77), sum_78 = SUM(ResolutionWidth + 78), sum_79 = SUM(ResolutionWidth + 79), sum_80 = SUM(ResolutionWidth + 80), sum_81 = SUM(ResolutionWidth + 81), sum_82 = SUM(ResolutionWidth + 82), sum_83 = SUM(ResolutionWidth + 83), sum_84 = SUM(ResolutionWidth + 84), sum_85 = SUM(ResolutionWidth + 85), sum_86 = SUM(ResolutionWidth + 86), sum_87 = SUM(ResolutionWidth + 87), sum_88 = SUM(ResolutionWidth + 88), sum_89 = SUM(ResolutionWidth + 89)' },
+  { "id": "stats_distinct_userid",
+    "suffix": 'STATS u = MV_COUNT(VALUES(UserID))' },
+  { "id": "stats_distinct_userid_by_region",
+    "suffix": 'STATS u = MV_COUNT(VALUES(UserID)) BY RegionID | SORT u DESC | LIMIT 10' },
+  { "id": "stats_searchphrase_users",
+    "suffix": 'WHERE SearchPhrase != "" | STATS u = MV_COUNT(VALUES(UserID)) BY SearchPhrase | SORT u DESC | LIMIT 10' },
+  { "id": "stats_min_max_eventdate",
+    "suffix": 'STATS min_EventDate = MIN(EventDate), max_EventDate = MAX(EventDate)' },
+  { "id": "stats_advengineid_by_advengineid",
+    "suffix": 'WHERE AdvEngineID != 0 | STATS c = COUNT(*) BY AdvEngineID | SORT c DESC' },
+  { "id": "stats_region_aggregates",
+    "suffix": 'STATS sum_AdvEngineID = SUM(AdvEngineID), c = COUNT(*), avg_ResolutionWidth = AVG(ResolutionWidth), count_distinct_UserID = MV_COUNT(VALUES(UserID)) BY RegionID | SORT c DESC | LIMIT 10' },
+  { "id": "stats_searchphrase_count",
+    "suffix": 'WHERE SearchPhrase != "" | STATS c = COUNT(*) BY SearchPhrase | SORT c DESC | LIMIT 10' },
+  { "id": "stats_url_count",
+    "suffix": 'STATS c = COUNT(*) BY URL | SORT c DESC | LIMIT 10' },
+  { "id": "stats_userid_count",
+    "suffix": 'STATS c = COUNT(*) BY UserID | SORT c DESC | LIMIT 10' },
+  { "id": "stats_watchid_clientip_all",
+    "suffix": 'STATS c = COUNT(*), sum_IsRefresh = SUM(IsRefresh), avg_ResolutionWidth = AVG(ResolutionWidth) BY WatchID, ClientIP | SORT c DESC | LIMIT 10' },
+  { "id": "stats_search_engine_clientip",
+    "suffix": 'WHERE SearchPhrase != "" | STATS c = COUNT(*), sum_IsRefresh = SUM(IsRefresh), avg_ResolutionWidth = AVG(ResolutionWidth) BY SearchEngineID, ClientIP | SORT c DESC | LIMIT 10' },
+  { "id": "sort_searchphrase_asc",
+    "suffix": 'WHERE SearchPhrase != "" | SORT SearchPhrase ASC | KEEP SearchPhrase | LIMIT 10' },
+  { "id": "sort_google_url_by_time",
+    "suffix": 'WHERE URL LIKE "*google*" | SORT EventTime ASC | LIMIT 10' },
+  { "id": "stats_advengineid_resolution",
+    "suffix": 'STATS sum_AdvEngineID = SUM(AdvEngineID), count = COUNT(*), avg_ResolutionWidth = AVG(ResolutionWidth)' },
+  { "id": "stats_clientip_variations",
+    "suffix": 'EVAL ip_m1 = ClientIP - 1, ip_m2 = ClientIP - 2, ip_m3 = ClientIP - 3 | STATS c = COUNT(*) BY ClientIP, ip_m1, ip_m2, ip_m3 | SORT c DESC | LIMIT 10' },
+  { "id": "stats_const_url_count",
+    "suffix": 'EVAL const1 = 1 | STATS c = COUNT(*) BY const1, URL | SORT c DESC | LIMIT 10' },
+  { "id": "stats_url_length_by_counter",
+    "suffix": 'WHERE URL != "" | STATS l = AVG(BYTE_LENGTH(URL)), c = COUNT(*) BY CounterID | WHERE c > 100000 | SORT l DESC | LIMIT 25' },
+  { "id": "stats_referer_domain_analysis",
+    "suffix": 'WHERE Referer != "" | EVAL k = REPLACE(Referer, "^https?://(?:www\\\\.)?([^/]+)/.*$", "$1") | STATS l = AVG(BYTE_LENGTH(Referer)), c = COUNT(*), min_Referer = MIN(Referer) BY k | WHERE c > 100000 | SORT l DESC | LIMIT 25' },
+  { "id": "stats_search_engine_phrase",
+    "suffix": 'WHERE SearchPhrase != "" | STATS c = COUNT(*) BY SearchEngineID, SearchPhrase | SORT c DESC | LIMIT 10' },
+  { "id": "stats_userid_searchphrase_count",
+    "suffix": 'STATS c = COUNT(*) BY UserID, SearchPhrase | SORT c DESC | LIMIT 10' },
+  { "id": "stats_userid_minute_searchphrase",
+    "suffix": 'EVAL m = EventTime / 60 % 60 | STATS c = COUNT(*) BY UserID, m, SearchPhrase | SORT c DESC | LIMIT 10' },
+  { "id": "stats_mobile_phone_users",
+    "suffix": 'WHERE MobilePhoneModel != "" | STATS u = MV_COUNT(VALUES(UserID)) BY MobilePhone, MobilePhoneModel | SORT u DESC | LIMIT 10' },
+  { "id": "stats_google_url_count",
+    "suffix": 'WHERE URL LIKE "*google*" | STATS count = COUNT(*)' },
+  { "id": "stats_counter62_july14_15_minutes",
+    "suffix": 'WHERE CounterID == 62 AND EventDate >= 15900 AND EventDate <= 15901 AND IsRefresh == 0 AND DontCountHits == 0 | EVAL M = EventTime - EventTime % 60 | STATS PageViews = COUNT(*) BY M | SORT M ASC | LIMIT 1010' },
+  { "id": "stats_counter62_july_links",
+    "suffix": 'WHERE CounterID == 62 AND EventDate >= 15887 AND EventDate <= 15917 AND IsRefresh == 0 AND IsLink != 0 AND IsDownload == 0 | STATS PageViews = COUNT(*) BY URL | SORT PageViews DESC | LIMIT 1010' },
+  { "id": "stats_counter62_july_titles",
+    "suffix": 'WHERE CounterID == 62 AND EventDate >= 15887 AND EventDate <= 15917 AND DontCountHits == 0 AND IsRefresh == 0 AND Title != "" | STATS PageViews = COUNT(*) BY Title | SORT PageViews DESC | LIMIT 10' },
+  { "id": "stats_counter62_july_traffic_sources",
+    "suffix": 'WHERE CounterID == 62 AND EventDate >= 15887 AND EventDate <= 15917 AND IsRefresh == 0 | EVAL Src = CASE(SearchEngineID == 0 AND AdvEngineID == 0, Referer, ""), Dst = URL | STATS PageViews = COUNT(*) BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst | SORT PageViews DESC | LIMIT 1010' }
+] %}
+
+{# 8-query representative cross-source subset. Runs against the 7 non-canonical
+   sources to surface format/codec/backend differences. #}
+{% set subset_ids = [
+  "count_hits",
+  "filter_userid_435090932899640449",
+  "stats_distinct_userid",
+  "stats_region_aggregates",
+  "stats_url_count",
+  "sort_searchphrase_asc",
+  "stats_clientip_variations",
+  "stats_counter62_july14_15_minutes"
+] %}
+
+{# Gap-fillers: ES|QL features the benchmark queries above don't exercise.
+   Target dataset = hits (anchor source only). #}
+{% set gapfiller_queries = [
+  { "id": "dissect_url_host",
+    "suffix": 'DISSECT URL "%{scheme}://%{host}/%{path}?%{qs}" | STATS c = COUNT(*) BY host | SORT c DESC | LIMIT 10' },
+  { "id": "grok_referer",
+    "suffix": 'WHERE Referer != "" | GROK Referer "%{NOTSPACE:ref_uri}" | STATS c = COUNT(*) BY ref_uri | LIMIT 10' },
+  { "id": "mv_expand_url_parts",
+    "suffix": 'EVAL parts = SPLIT(URL, "/") | MV_EXPAND parts | STATS c = COUNT(*) BY parts | SORT c DESC | LIMIT 10' },
+  { "id": "inline_stats_max_resolution",
+    "suffix": 'INLINE STATS max_resolution = MAX(ResolutionWidth) | WHERE ResolutionWidth == max_resolution | KEEP WatchID, ResolutionWidth, max_resolution | LIMIT 10' }
+] %}
+
+{# LOOKUP JOIN: EXTERNAL on the left, indexed `nyc_payment_types` on the right.
+   Runs only against NDJSON nyc_taxis sources (N1, N2). #}
+{% set lookup_join_queries = [
+  { "id": "lookup_join_payment_types",
+    "suffix": 'EVAL type = TO_STRING(payment_type) | LOOKUP JOIN nyc_payment_types ON type | STATS revenue = SUM(total_amount) BY name' }
+] %}
