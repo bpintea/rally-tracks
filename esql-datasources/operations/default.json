@@ -24,6 +24,7 @@
       "name": "{{ anchor.id }}__{{ q.id }}",
       "operation-type": "esql",
       "request-timeout": {{ d.request_timeout }},
+      "detailed-results": true,
       "query":{{ ('EXTERNAL "' ~ anchor.uri ~ '"' ~ (' ' ~ anchor.with if anchor.with else '') ~ ' | ' ~ q.suffix) | tojson }},
       "meta": {
         "source-id": "{{ anchor.id }}",
@@ -46,6 +47,7 @@
       "name": "{{ s.id }}__{{ q.id }}",
       "operation-type": "esql",
       "request-timeout": {{ d.request_timeout }},
+      "detailed-results": true,
       "query":{{ ('EXTERNAL "' ~ s.uri ~ '"' ~ (' ' ~ s.with if s.with else '') ~ ' | ' ~ q.suffix) | tojson }},
       "meta": {
         "source-id": "{{ s.id }}",
@@ -68,6 +70,7 @@
       "name": "{{ anchor.id }}__{{ q.id }}",
       "operation-type": "esql",
       "request-timeout": {{ d.request_timeout }},
+      "detailed-results": true,
       "query":{{ ('EXTERNAL "' ~ anchor.uri ~ '"' ~ (' ' ~ anchor.with if anchor.with else '') ~ ' | ' ~ q.suffix) | tojson }},
       "meta": {
         "source-id": "{{ anchor.id }}",
@@ -90,6 +93,7 @@
       "name": "{{ s.id }}__{{ q.id }}",
       "operation-type": "esql",
       "request-timeout": {{ d.request_timeout }},
+      "detailed-results": true,
       "query":{{ ('EXTERNAL "' ~ s.uri ~ '"' ~ (' ' ~ s.with if s.with else '') ~ ' | ' ~ q.suffix) | tojson }},
       "meta": {
         "source-id": "{{ s.id }}",

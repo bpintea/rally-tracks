@@ -11,7 +11,7 @@
 
    Source variants and query catalogues are defined in `_data.j2`, imported
    by both operations/*.json and challenges/*.json. See README.md for the
-   source catalogue and the ~93 EXTERNAL op layout.
+   source catalogue and the ~76 EXTERNAL op layout.
 
    Track parameters (all optional):
      mirror_region        Region suffix for the rally-tracks mirror buckets
